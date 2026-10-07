@@ -25,6 +25,10 @@ import { createAgentRouter } from '../agent.routes.js';
  * does, with the HTTP response as the run's first audience.
  */
 
+// The route resolves the caller's projectPath with path.resolve, so on Windows '/home/test/project'
+// becomes a drive-qualified path. Sessions seeded for that project must use the same resolved form.
+const SEEDED_PROJECT_PATH = path.resolve('/home/test/project');
+
 type AgentDependencies = Parameters<typeof createAgentRouter>[0];
 type RunFunction = AgentDependencies['queryClaude'];
 
@@ -194,7 +198,7 @@ test('a non-streaming API run answers with the app session id and is off the lis
 
 test('an API run continues a session the caller names by either id, and refuses one that does not exist', async () => {
   await withIsolatedDatabase(async () => {
-    sessionsDb.createAppSession('app-existing', 'claude', '/home/test/project', 'Existing');
+    sessionsDb.createAppSession('app-existing', 'claude', SEEDED_PROJECT_PATH, 'Existing');
     sessionsDb.assignProviderSessionId('app-existing', 'native-existing');
     const runtime = createHeldRuntime();
     runtime.release();
@@ -242,7 +246,7 @@ test('a sessionId that is not a string is refused, not bound to a query', async 
 
 test('a continued session runs under its own provider and project, as a chat send does', async () => {
   await withIsolatedDatabase(async () => {
-    sessionsDb.createAppSession('app-codex', 'codex', '/home/test/project', 'Codex one');
+    sessionsDb.createAppSession('app-codex', 'codex', SEEDED_PROJECT_PATH, 'Codex one');
     const claudeCalls: unknown[] = [];
     const codexCalls: unknown[] = [];
     const dependencies = createDependencies(async (_command, options, writer) => {

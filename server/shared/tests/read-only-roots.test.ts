@@ -26,6 +26,23 @@ process.env.USERPROFILE = fixtureHome;
 
 const { resolvePathUnderRoots, resolveReadOnlyRootPath, validateWorkspacePath } = await import('@/shared/utils.js');
 
+/**
+ * Creates a file symlink, or reports that this host does not permit it. Windows refuses file
+ * symlinks (EPERM) without Developer Mode or elevation, so the capability is probed rather than
+ * inferred from the platform. Any other failure is a real error and still throws.
+ */
+async function createFileSymlinkIfPermitted(target: string, linkPath: string): Promise<boolean> {
+  try {
+    await symlink(target, linkPath);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EPERM') {
+      return false;
+    }
+    throw error;
+  }
+}
+
 after(async () => {
   if (previousHome === undefined) {
     delete process.env.HOME;
@@ -57,7 +74,7 @@ test('a path under the system temp directory resolves as readable', async () => 
   }
 });
 
-test('a background agent output link resolves to its transcript under the Claude projects directory', async () => {
+test('a background agent output link resolves to its transcript under the Claude projects directory', async (t) => {
   const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), 'read-only-root-'));
 
   try {
@@ -71,10 +88,37 @@ test('a background agent output link resolves to its transcript under the Claude
     const tasksDirectory = path.join(temporaryDirectory, 'tasks');
     await mkdir(tasksDirectory);
     const outputLink = path.join(tasksDirectory, 'task-1.output');
-    await symlink(transcriptPath, outputLink);
+    if (!(await createFileSymlinkIfPermitted(transcriptPath, outputLink))) {
+      t.skip('file symlinks are not permitted on this host; the directory-link variant below covers the same resolution');
+      return;
+    }
 
     assert.equal(await resolveReadOnlyRootPath(outputLink), transcriptPath);
     assert.equal(await resolveReadOnlyRootPath(transcriptPath), transcriptPath);
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
+test('a directory link in the temp directory resolves to its target under the Claude projects directory', async () => {
+  const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), 'read-only-root-'));
+
+  try {
+    const transcriptDirectory = path.join(claudeProjectsRoot, '-home-user-project', 'session-2', 'subagents');
+    await mkdir(transcriptDirectory, { recursive: true });
+    const transcriptPath = path.join(transcriptDirectory, 'agent-2.jsonl');
+    await writeFile(transcriptPath, '{"type":"assistant"}\n', 'utf8');
+
+    // A junction needs no privilege on Windows, so this runs everywhere and exercises the same
+    // rule as the file link above: a name under the temp directory that is really under the
+    // Claude projects root resolves to the real path.
+    const tasksDirectory = path.join(temporaryDirectory, 'tasks');
+    await mkdir(tasksDirectory);
+    const outputLink = path.join(tasksDirectory, 'task-2.output');
+    await symlink(transcriptDirectory, outputLink, 'junction');
+
+    assert.equal(await resolveReadOnlyRootPath(outputLink), transcriptDirectory);
+    assert.equal(await resolveReadOnlyRootPath(path.join(outputLink, 'agent-2.jsonl')), transcriptPath);
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });
   }
@@ -106,7 +150,8 @@ test('a symlink planted in the temp directory cannot read outside every root', a
   try {
     await writeFile(path.join(outsideDirectory, 'secret.txt'), 'secret', 'utf8');
     const escapeLink = path.join(temporaryDirectory, 'escape');
-    await symlink(outsideDirectory, escapeLink);
+    // 'junction' makes a directory link on Windows without the symlink privilege; other platforms ignore it.
+    await symlink(outsideDirectory, escapeLink, 'junction');
 
     // The name is under a read-only root but the file is not, so resolving the
     // link before comparing is what keeps this closed.
