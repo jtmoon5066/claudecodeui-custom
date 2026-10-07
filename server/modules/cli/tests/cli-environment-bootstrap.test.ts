@@ -31,8 +31,19 @@ async function runCliBootstrapFixture(isPlatform: boolean): Promise<BootstrapRes
   const fixtureDatabasePath = path.join(fixtureRoot, 'auth.db');
 
   try {
+    const fixtureDevProfileDirectory = path.join(fixtureServerDirectory, 'modules', 'dev-profile');
     await mkdir(fixtureCliDirectory, { recursive: true });
+    await mkdir(fixtureDevProfileDirectory, { recursive: true });
     await Promise.all([
+      // load-env.ts imports the dev-profile guard through its barrel.
+      copyFile(
+        path.join(applicationRoot, 'server', 'modules', 'dev-profile', 'index.ts'),
+        path.join(fixtureDevProfileDirectory, 'index.ts'),
+      ),
+      copyFile(
+        path.join(applicationRoot, 'server', 'modules', 'dev-profile', 'dev-profile.service.ts'),
+        path.join(fixtureDevProfileDirectory, 'dev-profile.service.ts'),
+      ),
       copyFile(
         path.join(applicationRoot, 'server', 'load-env.ts'),
         path.join(fixtureServerDirectory, 'load-env.ts'),

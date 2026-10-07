@@ -4,6 +4,8 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+import { assertDevProfileIsolation, isDevProfileRequested } from './modules/dev-profile/index.js';
+
 // This bootstrap cannot import shared/utils.ts: that module reads environment
 // defaults during evaluation, before this file has loaded `.env`.
 function getBootstrapApplicationRoot(importMetaUrl: string) {
@@ -38,10 +40,25 @@ try {
   console.error('No .env file found or error reading it:', e.message);
 }
 
-// Keep the default database in a stable user-level location so rebuilding dist-server
-// never changes where the backend stores auth.db when DATABASE_PATH is not set explicitly.
-const DEFAULT_DATABASE_PATH = path.join(os.homedir(), '.cloudcli', 'auth.db');
+if (isDevProfileRequested(process.env)) {
+  // The isolated dev profile (scripts/dev-safe.mjs) must name every data location
+  // itself. Verify them against the values this process will really use and never
+  // apply the default below, so a missing variable cannot select the real profile.
+  try {
+    assertDevProfileIsolation(process.env, {
+      homeDirectory: os.homedir(),
+      temporaryDirectory: os.tmpdir(),
+    });
+  } catch (e: any) {
+    console.error(e.message);
+    process.exit(1);
+  }
+} else {
+  // Keep the default database in a stable user-level location so rebuilding dist-server
+  // never changes where the backend stores auth.db when DATABASE_PATH is not set explicitly.
+  const DEFAULT_DATABASE_PATH = path.join(os.homedir(), '.cloudcli', 'auth.db');
 
-if (!process.env.DATABASE_PATH) {
-  process.env.DATABASE_PATH = DEFAULT_DATABASE_PATH;
+  if (!process.env.DATABASE_PATH) {
+    process.env.DATABASE_PATH = DEFAULT_DATABASE_PATH;
+  }
 }
