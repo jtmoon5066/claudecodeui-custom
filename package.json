@@ -33,6 +33,7 @@
     "server:dev": "tsx --tsconfig server/tsconfig.json server/index.ts",
     "server:dev-watch": "tsx watch --tsconfig server/tsconfig.json server/index.ts",
     "client": "vite",
+    "dev:safe": "node scripts/dev-safe.mjs",
     "desktop": "electron electron/main.js",
     "desktop:dev": "cross-env ELECTRON_DEV_URL=http://127.0.0.1:5173 electron electron/main.js",
     "desktop:stage": "node scripts/release/prepare-desktop-app.js",
